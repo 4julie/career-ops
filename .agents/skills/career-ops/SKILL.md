@@ -1,6 +1,6 @@
 ---
 name: career-ops
-description: AI job search command center -- evaluate offers, generate CVs, scan portals, track applications
+description: AI job search command center -- evaluate job listings, generate CVs, scan portals, track applications
 arguments: mode
 user_invocable: true
 user-invocable: true
