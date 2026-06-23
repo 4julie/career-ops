@@ -2,36 +2,27 @@
 
 ## System Overview
 
-```
-                    ┌─────────────────────────────────┐
-                    │         AI Coding CLI Agent      │
-                    │   (reads AGENTS.md + modes/*.md) │
-                    └──────────┬──────────────────────┘
-                               │
-            ┌──────────────────┼──────────────────────┐
-            │                  │                       │
-     ┌──────▼──────┐   ┌──────▼──────┐   ┌───────────▼────────┐
-     │ Single Eval  │   │ Portal Scan │   │   Batch Process    │
-     │ (auto-pipe)  │   │  (scan.md)  │   │   (batch-runner)   │
-     └──────┬──────┘   └──────┬──────┘   └───────────┬────────┘
-            │                  │                       │
-            │           ┌──────▼──────┐          ┌────▼─────┐
-            │           │ pipeline.md │          │ N workers│
-            │           │ (URL inbox) │          │ (headless)
-            │           └─────────────┘          └────┬─────┘
-            │                                          │
-     ┌──────▼──────────────────────────────────────────▼──────┐
-     │                    Output Pipeline                      │
-     │  ┌──────────┐  ┌────────────┐  ┌───────────────────┐  │
-     │  │ Report.md│  │  PDF (HTML  │  │ Tracker TSV       │  │
-     │  │ (A-F eval)│  │  → Puppeteer)│  │ (merge-tracker)  │  │
-     │  └──────────┘  └────────────┘  └───────────────────┘  │
-     └────────────────────────────────────────────────────────┘
-                               │
-                    ┌──────────▼──────────┐
-                    │  data/applications.md │
-                    │  (canonical tracker)  │
-                    └──────────────────────┘
+```text
+AI Coding CLI Agent
+  reads AGENTS.md + modes/*.md
+  |
+  +-- Single Eval (auto-pipeline)
+  |
+  +-- Portal Scan (scan.md)
+  |     |
+  |     +-- pipeline.md URL inbox
+  |
+  +-- Batch Process (batch-runner)
+        |
+        +-- N headless workers
+              |
+              +-- Report .md
+              +-- PDF from HTML
+              +-- Tracker TSV
+                    |
+                    +-- merge-tracker.mjs
+                          |
+                          +-- data/applications.md canonical tracker
 ```
 
 ## Evaluation Flow (Single Offer)
@@ -55,12 +46,11 @@
 
 The batch system processes multiple offers in parallel:
 
-```
-batch-input.tsv    →  batch-runner.sh  →  N × headless CLI workers
-(id, url, source)     (orchestrator)       (self-contained prompt)
-                           │
-                    batch-state.tsv
-                    (tracks progress)
+```text
+batch-input.tsv  ->  batch-runner.sh  ->  N headless CLI workers
+(id, url, source)    (orchestrator)       (self-contained prompt)
+                         |
+                         +-- batch-state.tsv tracks progress
 ```
 
 Each worker is a headless AI CLI instance — the bundled `batch-runner.sh` supports multiple CLIs via the `--cli` flag (`--cli claude` or `--cli opencode`). See the Headless / Batch Mode table in `AGENTS.md`. Workers produce:
@@ -73,12 +63,12 @@ The orchestrator manages parallelism, state, retries, and resume.
 ## Data Flow
 
 ```
-cv.md                    →  Evaluation context
-article-digest.md        →  Proof points for matching
-config/profile.yml       →  Candidate identity
-portals.yml              →  Scanner configuration
-templates/states.yml     →  Canonical status values
-templates/cv-template.html → PDF generation template
+cv.md                      -> Evaluation context
+article-digest.md          -> Proof points for matching
+config/profile.yml         -> Candidate identity
+portals.yml                -> Scanner configuration
+templates/states.yml       -> Canonical status values
+templates/cv-template.html -> PDF generation template
 ```
 
 ## File Naming Conventions
@@ -103,7 +93,7 @@ Scripts maintain data consistency:
 
 The `dashboard/` directory contains a standalone Go TUI application that visualizes the pipeline:
 
-- Filter tabs: All, Evaluada, Aplicado, Entrevista, Top >=4, No Aplicar
+- Filter tabs: All, Evaluated, Applied, Interview, Top >=4, SKIP
 - Sort modes: Score, Date, Company, Status
 - Grouped/flat view
 - Lazy-loaded report previews

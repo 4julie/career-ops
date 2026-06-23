@@ -3,10 +3,10 @@
  * normalize-statuses.mjs — Clean non-canonical states in applications.md
  *
  * Maps all non-canonical statuses to canonical ones per states.yml:
- *   Evaluada, Aplicado, Respondido, Entrevista, Oferta, Rechazado, Descartado, NO APLICAR
+ *   Evaluated, Applied, Responded, Interview, Offer, Rejected, Discarded, SKIP
  *
  * Also strips markdown bold (**) and dates from the status field,
- * moving DUPLICADO info to the notes column.
+ * moving duplicate/repost info to the notes column.
  *
  * Run: node career-ops/normalize-statuses.mjs [--dry-run]
  */
@@ -31,7 +31,7 @@ function normalizeStatus(raw) {
   let s = raw.replace(/\*\*/g, '').trim();
   const lower = s.toLowerCase();
 
-  // DUPLICADO variants → Discarded
+  // Duplicate variants -> Discarded
   if (/^duplicado/i.test(s) || /^dup\b/i.test(s)) {
     return { status: 'Discarded', moveToNotes: raw.trim() };
   }
@@ -42,11 +42,11 @@ function normalizeStatus(raw) {
   if (/^descartada$/i.test(s)) return { status: 'Discarded' };
   if (/^descartado$/i.test(s)) return { status: 'Discarded' };
 
-  // Rechazada / Rechazado → Rejected
+  // Rejected aliases -> Rejected
   if (/^rechazada?$/i.test(s)) return { status: 'Rejected' };
   if (/^rechazado\s+\d{4}/i.test(s)) return { status: 'Rejected' };
 
-  // Aplicado with date → Applied (strip date)
+  // Applied alias with date -> Applied (strip date)
   if (/^aplicado\s+\d{4}/i.test(s)) return { status: 'Applied' };
 
   // CONDICIONAL / HOLD / EVALUAR / Verificar → Evaluated
@@ -119,7 +119,7 @@ for (let i = 0; i < lines.length; i++) {
   if (!line.startsWith('|')) continue;
 
   const parts = line.split('|').map(s => s.trim());
-  // Format: ['', '#', 'fecha', 'empresa', 'rol', 'score', 'STATUS', 'pdf', 'report', 'notas', '']
+  // Format: ['', '#', 'date', 'company', 'role', 'score', 'STATUS', 'pdf', 'report', 'notes', '']
   if (parts.length < 9) continue;
   if (parts[1] === '#' || parts[1] === '---' || parts[1] === '') continue;
 
@@ -140,7 +140,7 @@ for (let i = 0; i < lines.length; i++) {
   const oldStatus = rawStatus;
   parts[6] = result.status;
 
-  // Move DUPLICADO info to notes if needed
+  // Move duplicate/repost info to notes if needed
   if (result.moveToNotes && parts[9]) {
     const existing = parts[9] || '';
     if (!existing.includes(result.moveToNotes)) {
