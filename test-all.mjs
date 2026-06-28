@@ -158,6 +158,8 @@ const scripts = [
   { name: 'analyze-patterns.mjs --self-test', expectExit: 0 },
   { name: 'updater-migration-tests.mjs', expectExit: 0 },
   { name: 'tracker-columns-tests.mjs', expectExit: 0 },
+  { name: 'build-candidate-facts.mjs --check --quiet', expectExit: 0 },
+  { name: 'company-research-cache.mjs get ExampleCorp', expectExit: 0 },
   { name: 'validate-portals.mjs --file templates/portals.example.yml', expectExit: 0 },
   // Bare run: no portals.yml in the repo, so it must exit 0 gracefully (and hit
   // no network). The probe logic itself is unit-tested below with a mock.
@@ -435,6 +437,7 @@ const systemFiles = [
   'CLAUDE.md', 'OPENCODE.md', 'VERSION', 'DATA_CONTRACT.md',
   'modes/_shared.md', 'modes/_profile.template.md',
   'modes/oferta.md', 'modes/pdf.md', 'modes/scan.md',
+  'batch/triage-prompt.md',
   'templates/states.yml', 'templates/cv-template.html',
   '.claude/skills/career-ops/SKILL.md',
   '.opencode/skills/career-ops/SKILL.md',
@@ -484,6 +487,19 @@ if (/if \[\[ "\$status" == "completed" \|\| "\$status" == "skipped" \]\]/.test(b
   pass('Batch resume treats min-score skipped offers as terminal');
 } else {
   fail('Batch resume can reprocess min-score skipped offers');
+}
+
+if (
+  batchRunnerSource.includes('TRIAGE=true') &&
+  batchRunnerSource.includes('--no-triage') &&
+  batchRunnerSource.includes('--triage-threshold') &&
+  batchRunnerSource.includes('run_triage') &&
+  batchRunnerSource.includes('node "$PROJECT_DIR/build-candidate-facts.mjs" --quiet') &&
+  batchRunnerSource.includes('"triage-skip"')
+) {
+  pass('Batch runner has default triage pre-screen with candidate facts cache');
+} else {
+  fail('Batch runner missing default triage pre-screen controls');
 }
 
 if (/local total=0 completed=0 skipped=0 failed=0 pending=0/.test(batchRunnerSource) &&
@@ -675,6 +691,23 @@ if (
   pass('pipeline mode sweeps unconfirmed entries for liveness before processing');
 } else {
   fail('pipeline mode missing batch liveness sweep for unconfirmed entries');
+}
+
+const batchMode = readFile('modes/batch.md');
+const batchPrompt = readFile('batch/batch-prompt.md');
+const triagePrompt = readFile('batch/triage-prompt.md');
+if (
+  batchMode.includes('## Token controls') &&
+  batchMode.includes('triage-prompt.md') &&
+  batchMode.includes('build-candidate-facts.mjs') &&
+  batchPrompt.includes('data/cache/candidate-facts.json') &&
+  batchPrompt.includes('company-research-cache.mjs get') &&
+  triagePrompt.includes('decision: "full_eval"') &&
+  triagePrompt.includes('When in doubt, choose `full_eval`')
+) {
+  pass('Batch prompts document token-saving triage and cache contract');
+} else {
+  fail('Batch prompts missing token-saving triage/cache contract');
 }
 
 // ── 9. LOCAL PARSER CONTRACT ────────────────────────────────────
@@ -2999,6 +3032,10 @@ try {
 console.log('\n13. Batch rate-limit pause');
 
 try {
+  const bashProbe = run('bash', ['--version'], { stdio: ['pipe', 'pipe', 'pipe'] });
+  if (bashProbe === null) {
+    warn('Batch rate-limit pause runtime fixture skipped because bash is unavailable');
+  } else {
   const tmp = mkdtempSync(join(tmpdir(), 'co-batch-rate-'));
   const batchDir = join(tmp, 'batch');
   const fakeBin = join(tmp, 'bin');
@@ -3065,6 +3102,7 @@ try {
   }
 
   try { rmSync(tmp, { recursive: true, force: true }); } catch {}
+  }
 } catch (e) {
   fail(`Batch rate-limit pause test crashed: ${e.message}`);
 }

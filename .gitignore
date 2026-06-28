@@ -8,6 +8,8 @@ data/parser-output/**/*.json
 !data/parser-output/.gitkeep
 !data/parser-output/**/.gitkeep
 data/cache/ats-companies/
+data/cache/candidate-facts.json
+data/cache/company-research/
 reports/*.md
 !reports/.gitkeep
 output/*
@@ -43,6 +45,7 @@ modes/_profile.md
 
 # Generated
 .resolved-prompt-*
+.resolved-triage-prompt-*
 node_modules/
 bun.lock
 # Report-number reservation sentinels (ephemeral, created by reserve-report-num.mjs)

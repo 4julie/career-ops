@@ -1,11 +1,5 @@
 # Career-Ops -- AI Job Search Pipeline
 
-## Origin
-
-This system was built and used by [santifer](https://santifer.io) to evaluate 740+ job offers, generate 100+ tailored CVs, and land a Head of Applied AI role. The archetypes, scoring logic, negotiation scripts, and proof point structure all reflect his specific career search in AI/automation roles.
-
-The portfolio that goes with this system is also open source: [cv-santiago](https://github.com/santifer/cv-santiago).
-
 **It will work out of the box, but it's designed to be made yours.** If the archetypes don't match your career, the modes are in the wrong language, or the scoring doesn't fit your priorities -- just ask. You (AI Agent) can edit the user's files. The user says "change the archetypes to data engineering roles" and you do it. That's the whole point.
 
 ## Data Contract (CRITICAL)
@@ -67,6 +61,8 @@ AI-powered, CLI-agnostic job search automation: pipeline tracking, offer evaluat
 | `scan.mjs` | Zero-token portal scanner — hits Greenhouse/Ashby/Lever APIs directly, zero LLM cost |
 | `check-liveness.mjs` | Job posting liveness checker |
 | `liveness-core.mjs` | Shared liveness logic (expired signals win over generic Apply text) |
+| `build-candidate-facts.mjs` | Builds generated `data/cache/candidate-facts.json` for cheap batch triage |
+| `company-research-cache.mjs` | Reads/writes reusable company research cache entries |
 | `reports/` | Evaluation reports (format: `{###}-{company-slug}-{YYYY-MM-DD}.md`). Blocks A-F + G (Posting Legitimacy). Header includes `**Legitimacy:** {tier}`. |
 
 ### First Run — Onboarding (IMPORTANT)
@@ -283,6 +279,8 @@ When spawning headless workers for batch processing, use the appropriate command
 | Qwen | `qwen -p "prompt"` |
 | Antigravity CLI | `agy -p "prompt"` |
 
+Batch runs use a cheap triage stage by default. `batch-runner.sh` refreshes `data/cache/candidate-facts.json`, runs `batch/triage-prompt.md` for obvious skips, and only sends uncertain/promising roles to the full `batch/batch-prompt.md` A-G worker. Use `--no-triage` when auditing or calibrating and you need full evaluation for every pending offer.
+
 ## Stack and Conventions
 
 - Node.js (mjs modules), Playwright (PDF + scraping), YAML (config), HTML/CSS (template), Markdown (data), Canva MCP (optional visual CV)
@@ -290,6 +288,7 @@ When spawning headless workers for batch processing, use the appropriate command
 - Output in `output/` (gitignored), Reports in `reports/`
 - JDs in `jds/` (referenced as `local:jds/{file}` in pipeline.md)
 - Batch in `batch/` (gitignored except scripts and prompt)
+- Generated batch caches in `data/cache/` are user-layer data and gitignored. They are safe to delete and rebuild.
 - Report numbering: sequential 3-digit zero-padded, max existing + 1
 - **RULE: After each batch of evaluations, run `node merge-tracker.mjs`** to merge tracker additions and avoid duplications.
 - **RULE: NEVER create new entries in applications.md if company+role already exists.** Update the existing entry.

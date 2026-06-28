@@ -14,11 +14,13 @@ You are a job-offer evaluation worker for the candidate. Read the candidate name
 
 | File | Path | When |
 |------|------|------|
+| candidate-facts.json | `data/cache/candidate-facts.json` (if exists) | FIRST - compact generated orientation for targets, hard stops, and proof index |
 | cv.md | `cv.md` (project root) | ALWAYS |
 | _profile.md | `modes/_profile.md` (if exists) | ALWAYS - user customizations: archetypes, role shape, location policy, comp targets |
 | profile.yml | `config/profile.yml` (if exists) | ALWAYS - candidate identity, comp range, role-shape rules |
 | llms.txt | `llms.txt` (if exists) | ALWAYS |
 | article-digest.md | `article-digest.md` (project root) | ALWAYS - proof points |
+| company-research cache | `data/cache/company-research/{company-slug}.json` (if exists) | BEFORE WebSearch in Blocks D/G |
 | i18n.ts | `i18n.ts` (if exists, optional) | Only for interview/deep modes |
 | cv-template.html | `templates/cv-template.html` | For PDF |
 | generate-pdf.mjs | `generate-pdf.mjs` | For PDF |
@@ -26,6 +28,7 @@ You are a job-offer evaluation worker for the candidate. Read the candidate name
 **RULE: NEVER write to `cv.md` or `i18n.ts`.** They are read-only.
 **RULE: NEVER hardcode metrics.** Read them from `cv.md` and `article-digest.md` at evaluation time.
 **RULE: For article-derived metrics, `article-digest.md` wins over `cv.md`.** `cv.md` may contain older numbers.
+**RULE: If `data/cache/candidate-facts.json` exists, read it first for orientation, but still use raw source files for exact evidence and line citations.**
 **RULE: Before evaluating, load `modes/_profile.md` and `config/profile.yml` if they exist.** They contain the candidate's preferences and concrete scoring rules that **override** system defaults.
 
 These files may include patterns such as:
@@ -138,7 +141,21 @@ Include a **Gaps** section with mitigation strategy for each gap:
 
 #### Block D - Comp and Demand
 
-Use WebSearch for current salary data (Glassdoor, Levels.fyi, Blind), company comp reputation, and demand trend. Provide a table with data and cited sources. If data is unavailable, say so.
+Before WebSearch, check for reusable company research:
+
+```bash
+node company-research-cache.mjs get "{company}"
+```
+
+If the cache returns a recent entry with salary, comp reputation, hiring signals, or market context relevant to this company and role family, reuse it and cite it as cached research with its `updated_at` date. Only use WebSearch for missing, stale, or role-specific gaps.
+
+Use WebSearch for current salary data (Glassdoor, Levels.fyi, Blind), company comp reputation, and demand trend when cache data is unavailable or insufficient. Provide a table with data and cited sources. If data is unavailable, say so.
+
+After doing new WebSearch research, update the cache with the reusable company-level facts:
+
+```bash
+node company-research-cache.mjs put "{company}" '{"salary":[],"comp_reputation":[],"hiring_signals":[],"sources":[]}'
+```
 
 Comp score (1-5): 5 = top quartile, 4 = above market, 3 = median, 2 = slightly below, 1 = well below.
 
@@ -170,7 +187,7 @@ Analyze posting signals to assess whether this is a real, active opening.
 **What IS available in batch mode:**
 
 1. **Description quality analysis** - full JD text is available. Analyze specificity, requirements realism, salary transparency, and boilerplate ratio.
-2. **Company hiring signals** - WebSearch queries for layoff/freeze news (combine with Block D comp research).
+2. **Company hiring signals** - company-research cache first, then WebSearch queries for layoff/freeze news only when needed (combine with Block D comp research).
 3. **Reposting detection** - read `data/scan-history.tsv` to check for prior appearances.
 4. **Role market context** - qualitative assessment from JD content.
 
@@ -469,10 +486,10 @@ If anything fails:
 
 ### ALWAYS
 
-1. Read `cv.md`, `llms.txt`, and `article-digest.md` before evaluating.
+1. Read `data/cache/candidate-facts.json` first if it exists, then read `cv.md`, `llms.txt`, and `article-digest.md` before evaluating.
 2. Detect the role archetype and adapt framing.
 3. Cite exact CV lines when there is a match.
-4. Use WebSearch for comp and company data.
+4. Use company-research cache before WebSearch for comp and company data.
 5. Generate content in the JD language (`EN` default).
 6. Be direct and actionable - no fluff.
 7. When generating English text (PDF summaries, bullets, STAR stories), use native tech English: short sentences, action verbs, no unnecessary passive voice, no "in order to", and no "utilized".

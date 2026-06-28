@@ -21,6 +21,8 @@ All scripts live in the project root as `.mjs` modules and are exposed via `npm 
 | `npm run liveness` | `check-liveness.mjs` | Test if job URLs are still active |
 | `npm run scan` | `scan.mjs` | Zero-token portal scanner |
 | `npm run scan:full` | `scan-ats-full.mjs` | Reverse ATS discovery scanner |
+| `npm run facts` | `build-candidate-facts.mjs` | Build compact generated candidate facts cache for batch triage |
+| `npm run company-cache` | `company-research-cache.mjs` | Read/write reusable company research cache |
 | `npm run validate:portals` | `validate-portals.mjs` | Validate portals.yml shape before scanning |
 | `npm run tracker` | `tracker.mjs` | SQLite derived index over applications.md — sync/query/history/export |
 
@@ -148,6 +150,38 @@ npm run sync-check
 ```
 
 **Exit codes:** `0` no errors (warnings allowed), `1` errors found.
+
+---
+
+## facts
+
+Builds `data/cache/candidate-facts.json`, a generated user-layer cache derived from `cv.md`, `article-digest.md`, `config/profile.yml`, and `modes/_profile.md`. Batch triage reads this compact file before deciding whether a role is an obvious skip or should continue to full A-G evaluation.
+
+```bash
+npm run facts
+node build-candidate-facts.mjs --check      # print/validate without writing
+node build-candidate-facts.mjs --quiet      # write quietly
+```
+
+The cache is safe to delete; it regenerates on the next batch run. Because it contains personal career data, it is gitignored.
+
+**Exit codes:** `0` success, `1` script/runtime error.
+
+---
+
+## company-cache
+
+Reads and writes generated company-level research cache entries under `data/cache/company-research/`. Full batch workers check this cache before WebSearch for reusable salary, compensation reputation, layoff/freeze, and hiring-signal facts.
+
+```bash
+npm run company-cache -- get "Acme Corp"
+npm run company-cache -- path "Acme Corp"
+npm run company-cache -- put "Acme Corp" '{"salary":[],"hiring_signals":[],"sources":[]}'
+```
+
+Cache entries are user-layer generated data and are gitignored. They are reusable across multiple roles from the same employer, but workers should still search for missing, stale, or role-specific gaps.
+
+**Exit codes:** `0` success or cache miss, `1` invalid arguments or invalid JSON.
 
 ---
 

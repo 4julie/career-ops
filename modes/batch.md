@@ -29,8 +29,12 @@ batch/
   batch-state.tsv               # Progress (auto-generated, gitignored)
   batch-runner.sh               # Standalone orchestrator script
   batch-prompt.md               # Prompt template for workers
+  triage-prompt.md              # Cheap pre-screen prompt for obvious skips
   logs/                         # One log per job (gitignored)
   tracker-additions/            # Tracker lines (gitignored)
+data/cache/
+  candidate-facts.json          # Generated compact user facts (gitignored)
+  company-research/*.json       # Generated reusable company research (gitignored)
 ```
 
 ## Mode A: Conductor --chrome
@@ -78,6 +82,23 @@ Options:
 - `--max-retries N` — attempts per job (default: 2)
 - `--rate-limit-sleep N` — seconds to wait before retrying a transient rate-limited worker (default: 300; use 0 to pause the batch immediately)
 
+## Token controls
+
+Standalone batch runs use a two-stage path by default:
+
+1. `node build-candidate-facts.mjs --quiet` refreshes a compact, gitignored summary from the user-layer files.
+2. `triage-prompt.md` reads that cache plus the JD. If the role is clearly below `--triage-threshold`, it writes a concise SKIP report and tracker TSV, then marks the job `skipped`.
+3. Borderline and promising jobs continue to the full `batch-prompt.md` A-G worker.
+
+Runner options:
+- `--no-triage` - disable the cheap pre-screen and run full A-G for every pending offer
+- `--triage-threshold N` - score ceiling below which triage may write a SKIP report without running full A-G (default: 3.0)
+- `--triage-model NAME` - model for the cheap pre-screen worker (default: the same value as `--model`)
+
+This preserves full evaluation behavior for any uncertain role. Use `--no-triage` when you want the old behavior for audits or calibration.
+
+Full A-G workers also check `data/cache/company-research/{company}.json` before WebSearch. If company-level salary, reputation, or hiring-signal research is fresh enough, reuse it and only search for missing role-specific gaps.
+
 ## batch-state.tsv Format
 
 ```text
@@ -89,7 +110,7 @@ id	url	status	started_at	completed_at	report_num	score	error	retries
 5	https://...	paused_rate_limit	2026-...	2026-...	005	-	session limit; paused	1
 ```
 
-Valid statuses include `pending`, `processing`, `completed`, `failed`, `skipped`, `rate_limited`, and `paused_rate_limit`. `rate_limited` is an intermediate non-completed state emitted while the runner waits before retrying; if the run is interrupted there, a later non-`--retry-failed` run treats it as pending work.
+Valid statuses include `pending`, `processing`, `completed`, `failed`, `skipped`, `rate_limited`, and `paused_rate_limit`. `skipped` includes both min-score skips after full evaluation and triage skips before full A-G. `rate_limited` is an intermediate non-completed state emitted while the runner waits before retrying; if the run is interrupted there, a later non-`--retry-failed` run treats it as pending work.
 
 `paused_rate_limit` means a worker hit a Claude session/usage limit. The runner stops scheduling new offers, preserves the retry count, and resumes only when explicitly called with `--resume-paused`.
 
@@ -101,7 +122,7 @@ Valid statuses include `pending`, `processing`, `completed`, `failed`, `skipped`
 
 ## Workers (headless mode)
 
-Each worker receives `batch-prompt.md` as a system prompt. It is self-contained. Use your CLI's headless command — see the **Headless / Batch Mode** table in `AGENTS.md`.
+Each full worker receives `batch-prompt.md` as a system prompt. Triage workers receive `triage-prompt.md`. Use your CLI's headless command — see the **Headless / Batch Mode** table in `AGENTS.md`.
 
 The worker produces:
 1. `.md` report in `reports/`

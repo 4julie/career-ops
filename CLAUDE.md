@@ -67,6 +67,8 @@ AI-powered job search automation built on Claude Code: pipeline tracking, offer 
 | `scan.mjs` | Zero-token portal scanner — hits Greenhouse/Ashby/Lever APIs directly, zero LLM cost |
 | `check-liveness.mjs` | Job posting liveness checker |
 | `liveness-core.mjs` | Shared liveness logic (expired signals win over generic Apply text) |
+| `build-candidate-facts.mjs` | Builds generated `data/cache/candidate-facts.json` for cheap batch triage |
+| `company-research-cache.mjs` | Reads/writes reusable company research cache entries |
 | `reports/` | Evaluation reports (format: `{###}-{company-slug}-{YYYY-MM-DD}.md`). Blocks A-F + G (Posting Legitimacy), plus `## Machine Summary` YAML for downstream scripts. Header includes `**Legitimacy:** {tier}`. |
 
 ### OpenCode & Gemini CLI Commands
@@ -273,6 +275,8 @@ Default modes are in `modes/` (English). Additional language-specific modes are 
 
 **Exception for batch workers (`claude -p`):** Playwright is not available in headless pipe mode. Use WebFetch as fallback and mark the report header with `**Verification:** unconfirmed (batch mode)`. The user can verify manually later.
 
+Batch runs use a cheap triage stage by default. `batch-runner.sh` refreshes `data/cache/candidate-facts.json`, runs `batch/triage-prompt.md` for obvious skips, and only sends uncertain/promising roles to the full `batch/batch-prompt.md` A-G worker. Use `--no-triage` when auditing or calibrating and you need full evaluation for every pending offer.
+
 ---
 
 ## CI/CD and Quality
@@ -297,6 +301,7 @@ Default modes are in `modes/` (English). Additional language-specific modes are 
 - Output in `output/` (gitignored), Reports in `reports/`
 - JDs in `jds/` (referenced as `local:jds/{file}` in pipeline.md)
 - Batch in `batch/` (gitignored except scripts and prompt)
+- Generated batch caches in `data/cache/` are user-layer data and gitignored. They are safe to delete and rebuild.
 - Report numbering: sequential 3-digit zero-padded, max existing + 1
 - **RULE: After each batch of evaluations, run `node merge-tracker.mjs`** to merge tracker additions and avoid duplications.
 - **RULE: NEVER create new entries in applications.md if company+role already exists.** Update the existing entry.

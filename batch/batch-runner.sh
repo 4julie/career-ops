@@ -16,6 +16,7 @@ BATCH_DIR="$SCRIPT_DIR"
 INPUT_FILE="$BATCH_DIR/batch-input.tsv"
 STATE_FILE="$BATCH_DIR/batch-state.tsv"
 PROMPT_FILE="$BATCH_DIR/batch-prompt.md"
+TRIAGE_PROMPT_FILE="$BATCH_DIR/triage-prompt.md"
 LOGS_DIR="$BATCH_DIR/logs"
 TRACKER_DIR="$BATCH_DIR/tracker-additions"
 REPORTS_DIR="$PROJECT_DIR/reports"
@@ -36,6 +37,9 @@ START_FROM=0
 MAX_RETRIES=2
 MIN_SCORE=0
 MODEL=""  # empty = let claude -p use the Claude Max default
+TRIAGE=true
+TRIAGE_THRESHOLD=3.0
+TRIAGE_MODEL=""
 RATE_LIMIT_SLEEP=300
 BATCH_PAUSED=false
 STATUS_ONLY=false
@@ -56,11 +60,16 @@ Options:
   --start-from N       Start from offer ID N (skip earlier IDs)
   --max-retries N      Max retry attempts per offer (default: 2)
   --min-score N        Skip PDF/tracker for offers scoring below N (default: 0 = off)
+  --no-triage          Disable the cheap pre-screen stage and run full A-G for
+                       every pending offer
+  --triage-threshold N Score ceiling below which triage may write a SKIP report
+                       without running full A-G (default: 3.0)
   --rate-limit-sleep N Seconds to wait before retrying a rate-limited worker
                        (default: 300)
   --model NAME         Claude model passed to `claude -p --model` (default:
                        unset = Claude Max default). Use a cheaper model for
                        large batches, e.g. `--model claude-sonnet-4-6`.
+  --triage-model NAME  Model for the cheap pre-screen worker (default: --model)
   --status             Show batch progress and a per-job table, then exit
   --watch              Live-refresh progress until the run completes
   -h, --help           Show this help
@@ -97,12 +106,15 @@ while [[ $# -gt 0 ]]; do
     --start-from) START_FROM="$2"; shift 2 ;;
     --max-retries) MAX_RETRIES="$2"; shift 2 ;;
     --min-score) MIN_SCORE="$2"; shift 2 ;;
+    --no-triage) TRIAGE=false; shift ;;
+    --triage-threshold) TRIAGE_THRESHOLD="$2"; shift 2 ;;
     --rate-limit-sleep)
       [[ $# -ge 2 ]] || { echo "ERROR: --rate-limit-sleep requires an argument"; exit 1; }
       RATE_LIMIT_SLEEP="$2"
       shift 2
       ;;
     --model) MODEL="$2"; shift 2 ;;
+    --triage-model) TRIAGE_MODEL="$2"; shift 2 ;;
     --status) STATUS_ONLY=true; shift ;;
     --watch) WATCH_MODE=true; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -113,6 +125,15 @@ done
 if ! [[ "$RATE_LIMIT_SLEEP" =~ ^[0-9]+$ ]]; then
   echo "ERROR: --rate-limit-sleep must be a non-negative integer (seconds)."
   exit 1
+fi
+
+if ! [[ "$TRIAGE_THRESHOLD" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+  echo "ERROR: --triage-threshold must be a non-negative number."
+  exit 1
+fi
+
+if [[ -z "$TRIAGE_MODEL" ]]; then
+  TRIAGE_MODEL="$MODEL"
 fi
 
 # Lock file to prevent double execution
@@ -150,6 +171,11 @@ check_prerequisites() {
 
   if [[ ! -f "$PROMPT_FILE" ]]; then
     echo "ERROR: $PROMPT_FILE not found."
+    exit 1
+  fi
+
+  if [[ "$TRIAGE" == "true" && ! -f "$TRIAGE_PROMPT_FILE" ]]; then
+    echo "ERROR: $TRIAGE_PROMPT_FILE not found."
     exit 1
   fi
 
@@ -344,6 +370,41 @@ mark_paused_rate_limit() {
   BATCH_PAUSED=true
 }
 
+run_triage() {
+  local id="$1" url="$2" jd_file="$3" report_num="$4" date="$5" log_file="$6"
+
+  local resolved_triage_prompt="$BATCH_DIR/.resolved-triage-prompt-${id}.md"
+  local esc_url esc_jd_file esc_report_num esc_date esc_id esc_threshold
+  esc_url="${url//\\/\\\\}"
+  esc_url="${esc_url//|/\\|}"
+  esc_jd_file="${jd_file//\\/\\\\}"
+  esc_jd_file="${esc_jd_file//|/\\|}"
+  esc_report_num="${report_num//|/\\|}"
+  esc_date="${date//|/\\|}"
+  esc_id="${id//|/\\|}"
+  esc_threshold="${TRIAGE_THRESHOLD//|/\\|}"
+
+  sed \
+    -e "s|{{URL}}|${esc_url}|g" \
+    -e "s|{{JD_FILE}}|${esc_jd_file}|g" \
+    -e "s|{{REPORT_NUM}}|${esc_report_num}|g" \
+    -e "s|{{DATE}}|${esc_date}|g" \
+    -e "s|{{ID}}|${esc_id}|g" \
+    -e "s|{{TRIAGE_THRESHOLD}}|${esc_threshold}|g" \
+    "$TRIAGE_PROMPT_FILE" > "$resolved_triage_prompt"
+
+  local -a triage_args=(-p --dangerously-skip-permissions --strict-mcp-config)
+  if [[ -n "$TRIAGE_MODEL" ]]; then
+    triage_args+=(--model "$TRIAGE_MODEL")
+  fi
+  triage_args+=(--append-system-prompt-file "$resolved_triage_prompt" "Triage this job offer before full evaluation. URL: $url JD file: $jd_file Report number: $report_num Date: $date Batch ID: $id")
+
+  local exit_code=0
+  claude "${triage_args[@]}" > "$log_file" 2>&1 || exit_code=$?
+  rm -f "$resolved_triage_prompt"
+  return "$exit_code"
+}
+
 reserve_report_num_unlocked() {
   local id="$1" url="$2" started="$3" retries="$4"
 
@@ -374,6 +435,40 @@ process_offer() {
   local jd_file="/tmp/batch-jd-${id}.txt"
 
   echo "--- Processing offer #$id: $url (report $report_num, attempt $((retries + 1)))"
+
+  if [[ "$TRIAGE" == "true" ]]; then
+    local triage_log_file="$LOGS_DIR/${report_num}-${id}.triage.log"
+    echo "    Triage pre-screen (threshold: $TRIAGE_THRESHOLD)..."
+
+    local triage_exit=0
+    run_triage "$id" "$url" "$jd_file" "$report_num" "$date" "$triage_log_file" || triage_exit=$?
+
+    if [[ $triage_exit -ne 0 ]]; then
+      if is_session_limit_log "$triage_log_file"; then
+        mark_paused_rate_limit "$id" "$url" "$started_at" "$report_num" "$retries" "$triage_log_file"
+        echo "    ⏸️  Session/rate limit reached during triage; pausing batch without consuming retry budget."
+        return 0
+      fi
+      if is_rate_limit_log "$triage_log_file" && (( RATE_LIMIT_SLEEP <= 0 )); then
+        mark_paused_rate_limit "$id" "$url" "$started_at" "$report_num" "$retries" "$triage_log_file"
+        echo "    ⏸️  Rate limited during triage and --rate-limit-sleep is 0; pausing batch."
+        return 0
+      fi
+      echo "    ⚠️  Triage failed; preserving behavior by running full A-G."
+    else
+      local triage_decision triage_score
+      triage_decision=$(sed -nE 's/.*"decision":[[:space:]]*"([^"]+)".*/\1/p' "$triage_log_file" 2>/dev/null | tail -1 || true)
+      triage_score=$(sed -nE 's/.*"score_ceiling":[[:space:]]*([0-9.]+).*/\1/p' "$triage_log_file" 2>/dev/null | tail -1 || true)
+      if [[ "$triage_decision" == "skip" ]]; then
+        local completed_at
+        completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        update_state "$id" "$url" "skipped" "$started_at" "$completed_at" "$report_num" "${triage_score:-"-"}" "triage-skip" "$retries"
+        echo "    ⏭️  Triage skip (score ceiling: ${triage_score:-unknown} < $TRIAGE_THRESHOLD)"
+        return 0
+      fi
+      echo "    Triage decision: full_eval"
+    fi
+  fi
 
   # Build the prompt with placeholders replaced
   local prompt
@@ -695,9 +790,13 @@ main() {
   fi
 
   echo "=== career-ops batch runner ==="
-  echo "Parallel: $PARALLEL | Max retries: $MAX_RETRIES"
+  echo "Parallel: $PARALLEL | Max retries: $MAX_RETRIES | Triage: $TRIAGE"
   echo "Input: $total_input offers"
   echo ""
+
+  if [[ "$TRIAGE" == "true" ]]; then
+    node "$PROJECT_DIR/build-candidate-facts.mjs" --quiet || echo "⚠️  Could not refresh candidate facts cache; triage workers may fall back to raw files."
+  fi
 
   # Build list of offers to process
   local -a pending_ids=()

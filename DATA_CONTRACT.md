@@ -20,6 +20,8 @@ These files contain your personal data, customizations, and work product. Update
 | `data/applications.db` | Derived query index over `applications.md` (SQLite, rebuilt by `node tracker.mjs sync` — safe to delete) |
 | `data/pipeline.md` | Your URL inbox |
 | `data/scan-history.tsv` | Your scan history |
+| `data/cache/candidate-facts.json` | Generated compact candidate facts cache used by batch triage; derived from your CV/profile/proof points and safe to delete |
+| `data/cache/company-research/*` | Generated reusable company research cache for salary, reputation, and hiring signals |
 | `data/follow-ups.md` | Your follow-up history |
 | `writing-samples/*` | Your personal writing samples for style calibration (except `writing-samples/README.md`, which is system-owned documentation delivered by updates) |
 | `reports/*` | Your evaluation reports |
@@ -57,7 +59,10 @@ These files contain system logic, scripts, templates, and instructions that impr
 | `OPENCODE.md` | Agent instructions (OpenCode) |
 | `AGENTS.md` | Canonical agent instructions (imported by CLI-specific wrappers) |
 | `*.mjs` | Utility scripts |
+| `build-candidate-facts.mjs` | Builds generated candidate facts cache from user-layer files |
+| `company-research-cache.mjs` | Reads/writes generated company research cache entries |
 | `batch/batch-prompt.md` | Batch worker prompt |
+| `batch/triage-prompt.md` | Cheap batch pre-screen prompt for obvious skips |
 | `batch/batch-runner.sh` | Batch orchestrator |
 | `dashboard/*` | Go TUI dashboard |
 | `templates/*` | Base templates |

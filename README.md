@@ -104,7 +104,7 @@ Built by someone who used it to evaluate 740+ job offers, generate 100+ tailored
 | **ATS PDF Generation**   | Keyword-injected CVs with Space Grotesk + DM Sans design                                                                                 |
 | **Cover Letter Generator** | Research-backed cover letters with keyword mirroring, four interactive angle prompts (why/problems/approach/tone), draft-in-chat approval gate, and A4 PDF via the same HTML + Playwright pipeline as CVs. Auto-drafts on every evaluation; complete and generate on demand via `/career-ops cover` |
 | **Portal Scanner**       | 45+ companies pre-configured (Anthropic, OpenAI, ElevenLabs, Retool, n8n...) + custom queries across Ashby, Greenhouse, Lever, Wellfound |
-| **Batch Processing**     | Parallel evaluation with headless CLI workers (`claude -p` / `opencode run`)                                                             |
+| **Batch Processing**     | Token-aware batch evaluation with cheap triage for obvious skips, reusable company research cache, and full headless workers for promising roles (`claude -p` / `opencode run`) |
 | **Dashboard TUI**        | Terminal UI to browse, filter, and sort your pipeline                                                                                    |
 | **Human-in-the-Loop**    | AI evaluates and recommends, you decide and act. The system never submits an application -- you always have the final call               |
 | **Pipeline Integrity**   | Automated merge, dedup, status normalization, health checks                                                                              |
@@ -256,6 +256,8 @@ You paste a job URL or description
   .md   .pdf   .tsv
 ```
 
+For batch runs, `batch-runner.sh` first refreshes a compact candidate facts cache, then runs a cheap triage worker. Clear skips get a concise report and tracker entry without spending a full A-G evaluation context; uncertain or promising roles continue to the full worker.
+
 ## Pre-configured Portals
 
 The scanner comes with **45+ companies** ready to scan and **19 search queries** across major job boards. Copy `templates/portals.example.yml` to `portals.yml` and add your own:
@@ -315,8 +317,11 @@ career-ops/
 │   ├── portals.example.yml      # Scanner config template
 │   └── states.yml               # Canonical statuses
 ├── batch/
-│   ├── batch-prompt.md          # Self-contained worker prompt
+│   ├── batch-prompt.md          # Self-contained full worker prompt
+│   ├── triage-prompt.md         # Cheap pre-screen prompt for obvious skips
 │   └── batch-runner.sh          # Orchestrator script
+├── build-candidate-facts.mjs     # Generated candidate facts cache builder
+├── company-research-cache.mjs    # Company research cache helper
 ├── dashboard/                   # Go TUI pipeline viewer
 ├── data/                        # Your tracking data (gitignored)
 ├── reports/                     # Evaluation reports (gitignored)
