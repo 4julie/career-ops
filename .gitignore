@@ -21,6 +21,7 @@ batch/tracker-additions/**/*.tsv
 jds/*
 !jds/.gitkeep
 /candidate-facts.json
+jb-ignoreAll/*
 # Interview prep (accumulated STAR+R stories — user data)
 interview-prep/*
 !interview-prep/.gitkeep
